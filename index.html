@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>Fusée Spatiale Deluxe</title>
 <style>
-body {margin:0;padding:0;height:100vh;overflow:hidden;font-family:Arial, sans-serif;background:linear-gradient(180deg,#000428,#004e92);color:white;}
+body {margin:0;padding:0;height:100vh;overflow:hidden;font-family:Arial,sans-serif;background:linear-gradient(180deg,#000428,#004e92);color:white;}
 #gameContainer{position:relative;width:100%;height:100%;display:flex;justify-content:center;align-items:center;}
 canvas{background:radial-gradient(circle,#001a33,#000);border:3px solid #00d4ff;box-shadow:0 0 30px #00d4ff80;}
 #screen{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;background:#000000dd;z-index:10;}
@@ -37,7 +37,6 @@ let keys={};
 
 let player={x:280,y:740,w:40,h:60,shield:false,laser:false};
 let asteroids=[], bonuses=[], iaPlayers=[], particleList=[], lasers=[];
-
 let asteroidSpawnTimer=0, asteroidSpawnInterval=60;
 let laserCooldown=0;
 let BONUS_INTERVAL=100, nextBonusTrigger=100;
@@ -167,43 +166,49 @@ function spawnBonus(){
 }
 function useBonus(p,type){
   bonusSound.currentTime=0; bonusSound.play();
-  if(type==="shield"){shieldSound.currentTime=0; shieldSound.play(); p.shield=true; setTimeout(()=>p.shield=false,60000);}
-  if(type==="laser"){p.laser=true; setTimeout(()=>p.laser=false,60000);}
+  let duration=15000; // 15 secondes
+  if(type==="shield"){shieldSound.currentTime=0; shieldSound.play(); p.shield=true; setTimeout(()=>p.shield=false,duration);}
+  if(type==="laser"){p.laser=true; setTimeout(()=>p.laser=false,duration);}
   if(type==="score"){score+=100; scoreSpan.textContent=score;}
 }
 
-// ===== DRAW =====
+// ===== DRAW FUSÉE =====
 function drawRocket(p,color){
-  // Fusée stylisée : corps + nez + ailettes + fenêtre
-  ctx.save(); ctx.translate(p.x+p.w/2,p.y+p.h/2);
+  ctx.save(); 
+  ctx.translate(p.x+p.w/2,p.y+p.h/2);
 
-  // Corps
-  ctx.fillStyle=color||"#00d4ff";
+  // Corps fusée avec dégradé
+  let grad=ctx.createLinearGradient(0,-p.h/2,0,p.h/2);
+  grad.addColorStop(0,"#00d4ff");
+  grad.addColorStop(0.7,"#004080");
+  grad.addColorStop(1,"#001a33");
+  ctx.fillStyle=color||grad;
   ctx.beginPath();
-  ctx.moveTo(0,-p.h/2); // Nez
-  ctx.lineTo(p.w/2,p.h/2); // Base droite
-  ctx.lineTo(-p.w/2,p.h/2); // Base gauche
-  ctx.closePath(); ctx.fill();
+  ctx.moveTo(0,-p.h/2);
+  ctx.lineTo(p.w/2,p.h/2);
+  ctx.lineTo(-p.w/2,p.h/2);
+  ctx.closePath();
+  ctx.fill();
 
-  // Ailettes
+  // Ailettes animées
+  let wingOffset=Math.sin(Date.now()/100)*2;
   ctx.fillStyle="#ff4500";
   ctx.beginPath();
-  ctx.moveTo(-p.w/2,p.h/2); ctx.lineTo(-p.w/2-10,p.h/2+15); ctx.lineTo(-p.w/2,p.h/2); ctx.closePath(); ctx.fill();
+  ctx.moveTo(-p.w/2,p.h/2); ctx.lineTo(-p.w/2-10+wingOffset,p.h/2+15); ctx.lineTo(-p.w/2,p.h/2); ctx.closePath(); ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(p.w/2,p.h/2); ctx.lineTo(p.w/2+10,p.h/2+15); ctx.lineTo(p.w/2,p.h/2); ctx.closePath(); ctx.fill();
+  ctx.moveTo(p.w/2,p.h/2); ctx.lineTo(p.w/2+10+wingOffset,p.h/2+15); ctx.lineTo(p.w/2,p.h/2); ctx.closePath(); ctx.fill();
 
-  // Fenêtre
+  // Fenêtre cockpit
   ctx.fillStyle="#87CEEB";
   ctx.beginPath(); ctx.arc(0,0,p.w*0.15,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="rgba(255,255,255,0.4)";
+  ctx.beginPath(); ctx.arc(-p.w*0.05,-p.h*0.05,p.w*0.05,0,Math.PI*2); ctx.fill();
 
   ctx.restore();
-}
 
-function drawShield(p){
-  if(!p.shield) return;
-  let r=35+Math.sin(Date.now()/120)*3;
-  ctx.strokeStyle="#00caff"; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.arc(p.x+p.w/2,p.y+p.h/2,r,0,Math.PI*2); ctx.stroke();
+  // Flamme dynamique
+  spawnParticles(p.x+p.w/2,p.y+p.h/2+20,"#ffaa00",2+Math.random()*2,2+Math.floor(Math.random()*3));
+  spawnParticles(p.x+p.w/2,p.y+p.h/2+20,"#ff3300",2+Math.random()*2,1+Math.floor(Math.random()*2));
 }
 
 // ===== COLLISION =====
@@ -211,21 +216,17 @@ function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
 
 // ===== UPDATE =====
 function update(){
-  if(!gameRunning) return;
-  if(!gamePaused) requestAnimationFrame(update);
+  if(!gameRunning||gamePaused) return;
   ctx.clearRect(0,0,600,800);
 
-  // Stars
+  // étoiles
   ctx.fillStyle="white";
   for(let i=0;i<40;i++){let x=(i*137)%600, y=((i*137+score*2)%800); ctx.fillRect(x,y,2,2);}
 
   movePlayer();
   if(laserCooldown>0) laserCooldown--;
 
-  spawnParticles(player.x+player.w/2,player.y+player.h,"#ffaa00",2,2);
-  drawParticles();
-
-  // LASERS
+  // Dessiner et déplacer lasers
   lasers.forEach((l,i)=>{
     l.y-=15;
     ctx.fillStyle="#ff3300";
@@ -233,37 +234,31 @@ function update(){
     asteroids.forEach((a,j)=>{
       if(hit(l,a)){
         // Explosion rouge-orangée
-        for(let k=0;k<15;k++){particleList.push({x:a.x+a.w/2,y:a.y+a.h/2,dx:(Math.random()*2-1)*2,dy:(Math.random()*2-1)*2,life:30,size:4,color:"#ff5500"});}
+        for(let k=0;k<15;k++){
+          particleList.push({x:a.x+a.w/2,y:a.y+a.h/2,dx:(Math.random()*2-1)*2,dy:(Math.random()*2-1)*2,life:30,size:4,color:"#ff5500"});
+        }
         explosionSound.currentTime=0; explosionSound.play();
-        asteroids.splice(j,1);
-        lasers.splice(i,1);
+        asteroids.splice(j,1); lasers.splice(i,1);
         score+=10; scoreSpan.textContent=score;
       }
     });
     if(l.y<-20) lasers.splice(i,1);
   });
 
-  // Spawn asteroids + difficulty ramp
+  spawnParticles(player.x+player.w/2,player.y+player.h,"#ffaa00",2,2);
+  drawParticles();
+
+  // Spawn asteroids
   asteroidSpawnTimer++;
-  if(asteroidSpawnTimer>=asteroidSpawnInterval){spawnAsteroid(); asteroidSpawnTimer=0; if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;}
+  if(asteroidSpawnTimer>=asteroidSpawnInterval){
+    spawnAsteroid();
+    asteroidSpawnTimer=0;
+    if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;
+  }
 
   // Bonuses
   if(score>=nextBonusTrigger){spawnBonus(); nextBonusTrigger+=BONUS_INTERVAL;}
   bonuses.forEach((b,i)=>{b.y+=b.speed; ctx.font="28px Arial"; ctx.fillText(b.icon,b.x,b.y+b.h); if(hit(player,b)){useBonus(player,b.type); bonuses.splice(i,1);}});
-
-  drawRocket(player); drawShield(player);
-
-  // IA
-  if(mode==="multi"){
-    iaPlayers.forEach(ai=>{
-      if(!ai.alive) return;
-      if(Math.random()<.03) ai.dir=(Math.random()<.5?-1:1);
-      ai.x+=ai.dir*ai.speed; ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
-      spawnParticles(ai.x+ai.w/2,ai.y+ai.h,"#ffaa00",2,2);
-      drawRocket(ai,ai.color); drawShield(ai);
-      asteroids.forEach(a=>{if(hit(ai,a)){if(ai.shield){spawnParticles(a.x,a.y,"#00caff",4,15); a.y=9999;} else ai.alive=false;}});
-    });
-  }
 
   // Asteroids collision player
   asteroids.forEach((a,i)=>{
@@ -274,7 +269,22 @@ function update(){
     if(hit(player,a)){if(player.shield){spawnParticles(a.x,a.y,"#00caff",4,15); asteroids.splice(i,1);} else endGame();}
   });
 
+  drawRocket(player);
+
+  // IA
+  if(mode==="multi"){
+    iaPlayers.forEach(ai=>{
+      if(!ai.alive) return;
+      if(Math.random()<.03) ai.dir=(Math.random()<.5?-1:1);
+      ai.x+=ai.dir*ai.speed; ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
+      spawnParticles(ai.x+ai.w/2,ai.y+ai.h,"#ffaa00",2,2);
+      drawRocket(ai,ai.color);
+      asteroids.forEach(a=>{if(hit(ai,a)){if(ai.shield){spawnParticles(a.x,a.y,"#00caff",4,15); a.y=9999;} else ai.alive=false;}});
+    });
+  }
+
   scoreSpan.textContent=score;
+  requestAnimationFrame(update);
 }
 
 // ===== END GAME =====
@@ -282,11 +292,30 @@ function endGame(){
   gameRunning=false;
   pauseBtn.style.display="none"; scoreDisplay.style.display="none";
   screen.style.display="flex";
-  screen.innerHTML=`<h1>GAME OVER</h1><p>Score: ${score}</p><button onclick="location.reload()">Rejouer</button>`;
+  screen.innerHTML=`
+    <h1>GAME OVER</h1>
+    <p>Score: ${score}</p>
+    <button onclick="initGame()">Rejouer</button>
+    <button onclick="menuMain()">Menu</button>
+  `;
 }
 
 // ===== PAUSE =====
-function togglePause(){gamePaused=!gamePaused;if(!gamePaused) requestAnimationFrame(update);}
+function togglePause(){
+  gamePaused=!gamePaused;
+  if(gamePaused){
+    screen.style.display="flex";
+    screen.innerHTML=`
+      <h1>⏸ PAUSE ⏸</h1>
+      <button onclick="resumeGame()">Reprendre</button>
+      <button onclick="menuMain()">Menu</button>
+    `;
+  } else {
+    screen.style.display="none";
+    requestAnimationFrame(update);
+  }
+}
+function resumeGame(){screen.style.display="none"; gamePaused=false; requestAnimationFrame(update);}
 </script>
 </body>
 </html>

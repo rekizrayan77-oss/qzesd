@@ -167,48 +167,48 @@ function useBonus(p,type){
   if(type==="score"){score+=100; scoreSpan.textContent=score;}
 }
 
-// ===== DESSIN FUSÉE (style emoji 🚀) =====
+// ===== DESSIN FUSÉE (style emoji 🚀 avec inclinaison + bouclier) =====
 function drawRocket(p,color){
   ctx.save();
+  
+  // Inclinaison selon la direction
+  let tilt=0;
+  if(keys.ArrowLeft) tilt=-0.25;
+  else if(keys.ArrowRight) tilt=0.25;
   ctx.translate(p.x+p.w/2,p.y+p.h/2);
+  ctx.rotate(tilt);
 
-  // Corps fusée triangulaire + base arrondie
+  // Corps fusée
   ctx.fillStyle=color||"#00d4ff";
   ctx.beginPath();
-  ctx.moveTo(0,-p.h/2); // pointe
-  ctx.lineTo(p.w/2,p.h/4); // droite
-  ctx.lineTo(p.w/4,p.h/2); // base droite
-  ctx.lineTo(-p.w/4,p.h/2); // base gauche
-  ctx.lineTo(-p.w/2,p.h/4); // gauche
+  ctx.moveTo(0,-p.h/2); 
+  ctx.lineTo(p.w/2,p.h/4);
+  ctx.lineTo(p.w/4,p.h/2);
+  ctx.lineTo(-p.w/4,p.h/2);
+  ctx.lineTo(-p.w/2,p.h/4);
   ctx.closePath(); ctx.fill();
 
   // Fenêtre cockpit
   ctx.fillStyle="#87CEEB";
   ctx.beginPath(); ctx.arc(0,-p.h/6,p.w*0.15,0,Math.PI*2); ctx.fill();
+
+  // Bouclier pulsant
+  if(p.shield){
+    let r=35+Math.sin(Date.now()/120)*3;
+    ctx.strokeStyle="#00caff"; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+    ctx.stroke();
+  }
+
   ctx.restore();
 
-  // Flamme dynamique derrière
+  // Flamme derrière
   spawnParticles(p.x+p.w/2,p.y+p.h/2+10,"#ffaa00",2+Math.random()*2,2+Math.floor(Math.random()*3));
   spawnParticles(p.x+p.w/2,p.y+p.h/2+10,"#ff3300",2+Math.random()*2,1+Math.floor(Math.random()*2));
 }
 
 // ===== COLLISION =====
 function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
-
-// ===== SCREEN SHAKE =====
-function shakeScreen(intensity,duration){
-  let start=Date.now();
-  function shake(){
-    let elapsed=Date.now()-start;
-    if(elapsed<duration){
-      let dx=(Math.random()*2-1)*intensity;
-      let dy=(Math.random()*2-1)*intensity;
-      canvas.style.transform=`translate(${dx}px,${dy}px)`;
-      requestAnimationFrame(shake);
-    } else {canvas.style.transform="translate(0,0)";}
-  }
-  shake();
-}
 
 // ===== UPDATE =====
 function update(){
@@ -217,23 +217,21 @@ function update(){
 
   // étoiles
   ctx.fillStyle="white";
-  for(let i=0;i<40;i++){let x=(i*137)%600, y=((i*137+score*2)%800); ctx.fillRect(x,y,2,2);}
+  for(let i=0;i<40;i++){let x=(i*137)%600,y=((i*137+score*2)%800); ctx.fillRect(x,y,2,2);}
 
   movePlayer();
   if(laserCooldown>0) laserCooldown--;
 
+  drawParticles();
+
   // Lasers
   lasers.forEach((l,i)=>{
-    l.y-=15;
-    ctx.fillStyle="#ff3300"; ctx.fillRect(l.x-2,l.y,l.w,l.h);
+    l.y-=10;
+    ctx.fillStyle="red";
+    ctx.fillRect(l.x-2,l.y,l.w,l.h);
     asteroids.forEach((a,j)=>{
       if(hit(l,a)){
-        // Explosion rouge-orangée
-        for(let k=0;k<20;k++){
-          let angle=Math.random()*Math.PI*2, speed=Math.random()*4+1;
-          particleList.push({x:a.x+a.w/2,y:a.y+a.h/2,dx:Math.cos(angle)*speed,dy:Math.sin(angle)*speed,life:30+Math.floor(Math.random()*10),size:3+Math.random()*3,color:"#ff5500"});
-        }
-        shakeScreen(5,100);
+        for(let k=0;k<10;k++) spawnParticles(a.x+a.w/2,a.y+a.h/2,"#ff5500",2+Math.random()*2,2);
         explosionSound.currentTime=0; explosionSound.play();
         asteroids.splice(j,1); lasers.splice(i,1);
         score+=10; scoreSpan.textContent=score;
@@ -242,34 +240,20 @@ function update(){
     if(l.y<-20) lasers.splice(i,1);
   });
 
-  drawParticles();
-
   // Asteroids
   asteroidSpawnTimer++;
   if(asteroidSpawnTimer>=asteroidSpawnInterval){spawnAsteroid(); asteroidSpawnTimer=0; if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;}
-
   if(score>=nextBonusTrigger){spawnBonus(); nextBonusTrigger+=BONUS_INTERVAL;}
-  bonuses.forEach((b,i)=>{b.y+=b.speed; ctx.font="28px Arial"; ctx.fillText(b.icon,b.x,b.y+b.h); if(hit(player,b)){useBonus(player,b.type); bonuses.splice(i,1);}});
 
   asteroids.forEach((a,i)=>{
     a.y+=a.speed;
-    if(a.y>800){asteroids.splice(i,1); score+=10; scoreSpan.textContent=score;}
     ctx.fillStyle="#888"; ctx.beginPath(); ctx.arc(a.x+a.w/2,a.y+a.h/2,a.w/2,0,Math.PI*2); ctx.fill();
     if(hit(player,a)){if(player.shield){spawnParticles(a.x,a.y,"#00caff",4,15); asteroids.splice(i,1);} else endGame();}
   });
 
-  drawRocket(player);
+  bonuses.forEach((b,i)=>{b.y+=b.speed; ctx.font="28px Arial"; ctx.fillText(b.icon,b.x,b.y+b.h); if(hit(player,b)){useBonus(player,b.type); bonuses.splice(i,1);}});
 
-  if(mode==="multi"){
-    iaPlayers.forEach(ai=>{
-      if(!ai.alive) return;
-      if(Math.random()<.03) ai.dir=(Math.random()<.5?-1:1);
-      ai.x+=ai.dir*ai.speed; ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
-      spawnParticles(ai.x+ai.w/2,ai.y+ai.h,"#ffaa00",2,2);
-      drawRocket(ai,ai.color);
-      asteroids.forEach(a=>{if(hit(ai,a)){if(ai.shield){spawnParticles(a.x,a.y,"#00caff",4,15); a.y=9999;} else ai.alive=false;}});
-    });
-  }
+  drawRocket(player);
 
   scoreSpan.textContent=score;
   requestAnimationFrame(update);

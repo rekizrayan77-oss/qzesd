@@ -41,8 +41,6 @@ let asteroids=[], bonuses=[], iaPlayers=[], particleList=[], lasers=[];
 let asteroidSpawnTimer=0, asteroidSpawnInterval=60;
 let laserCooldown=0;
 let BONUS_INTERVAL=100, nextBonusTrigger=100;
-
-// Clignotement bonus
 let bonusBlink=false;
 
 // ===== SOUNDS =====
@@ -144,11 +142,11 @@ function movePlayer(){
   if(keys.Space && player.laser && laserCooldown<=0) shootLaser(player);
 }
 
-// ===== TIR =====
+// ===== LASERS =====
 function shootLaser(p){
   laserCooldown=15;
   laserSound.currentTime=0; laserSound.play();
-  lasers.push({x:p.x+p.w/2,y:p.y,w:4,h:20});
+  lasers.push({x:p.x+p.w/2,y:p.y,w:4,h:20,owner:(p===player?"player":"ia")});
 }
 
 // ===== ASTEROIDES & BONUS =====
@@ -166,63 +164,87 @@ function useBonus(p,type){
   let duration=15000;
   bonusSound.currentTime=0; bonusSound.play();
   if(type==="shield"){
-    shieldSound.currentTime=0; shieldSound.play(); 
-    p.shield=true; 
-    // clignotement 3s avant la fin
+    shieldSound.currentTime=0; shieldSound.play();
+    p.shield=true;
     setTimeout(()=>{
-      let blinkInterval = setInterval(()=>{bonusBlink=!bonusBlink;}, 200);
-      setTimeout(()=>{clearInterval(blinkInterval); bonusBlink=false;}, 3000);
-    }, duration-3000);
-    setTimeout(()=>p.shield=false, duration);
+      let blinkInterval=setInterval(()=>{bonusBlink=!bonusBlink;},200);
+      setTimeout(()=>{clearInterval(blinkInterval);bonusBlink=false;},3000);
+    },duration-3000);
+    setTimeout(()=>p.shield=false,duration);
   }
   if(type==="laser"){
-    p.laser=true; 
-    setTimeout(()=>p.laser=false, duration);
+    p.laser=true;
+    setTimeout(()=>p.laser=false,duration);
     setTimeout(()=>{
-      let blinkInterval = setInterval(()=>{bonusBlink=!bonusBlink;}, 200);
-      setTimeout(()=>{clearInterval(blinkInterval); bonusBlink=false;}, 3000);
-    }, duration-3000);
+      let blinkInterval=setInterval(()=>{bonusBlink=!bonusBlink;},200);
+      setTimeout(()=>{clearInterval(blinkInterval);bonusBlink=false;},3000);
+    },duration-3000);
   }
   if(type==="score"){score+=100; scoreSpan.textContent=score;}
 }
 
 // ===== DESSIN FUSÉE =====
 function drawRocket(p,color){
-  if(bonusBlink) return; // clignotement
+  if(bonusBlink) return;
 
   ctx.save();
   let tilt=0;
-  if(keys.ArrowLeft) tilt=-0.25;
-  else if(keys.ArrowRight) tilt=0.25;
+  if(p===player){
+    if(keys.ArrowLeft) tilt=-0.25;
+    else if(keys.ArrowRight) tilt=0.25;
+  }
   ctx.translate(p.x+p.w/2,p.y+p.h/2);
   ctx.rotate(tilt);
 
-  // corps
-  ctx.fillStyle=color||"#00d4ff";
-  ctx.beginPath();
-  ctx.moveTo(0,-p.h/2); ctx.lineTo(p.w/2,p.h/4);
-  ctx.lineTo(p.w/4,p.h/2); ctx.lineTo(-p.w/4,p.h/2);
-  ctx.lineTo(-p.w/2,p.h/4); ctx.closePath(); ctx.fill();
+  // Corps avec dégradé
+  let grad=ctx.createLinearGradient(0,-p.h/2,0,p.h/2);
+  if(p===player){grad.addColorStop(0,"#00bfff");grad.addColorStop(1,"#00d4ff");}
+  else {grad.addColorStop(0,p.color);grad.addColorStop(1,"#ffffff22");}
+  ctx.fillStyle=grad;
 
-  // fenêtre cockpit
+  ctx.beginPath();
+  ctx.moveTo(0,-p.h/2); ctx.lineTo(p.w/2,p.h/4); ctx.lineTo(p.w/4,p.h/2); ctx.lineTo(-p.w/4,p.h/2); ctx.lineTo(-p.w/2,p.h/4); ctx.closePath(); ctx.fill();
+
+  // Cockpit
   ctx.fillStyle="#87CEEB";
   ctx.beginPath(); ctx.arc(0,-p.h/6,p.w*0.15,0,Math.PI*2); ctx.fill();
 
-  // bouclier
+  // Bouclier
   if(p.shield){
     let r=35+Math.sin(Date.now()/120)*3;
     ctx.strokeStyle="#00caff"; ctx.lineWidth=3;
     ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
   }
+
   ctx.restore();
 
-  // flamme
+  // Flammes
   spawnParticles(p.x+p.w/2,p.y+p.h/2+10,"#ffaa00",2+Math.random()*2,2+Math.floor(Math.random()*3));
   spawnParticles(p.x+p.w/2,p.y+p.h/2+10,"#ff3300",2+Math.random()*2,1+Math.floor(Math.random()*2));
 }
 
 // ===== COLLISION =====
 function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+// ===== IA =====
+function moveIA(){
+  iaPlayers.forEach(ai=>{
+    if(!ai.alive) return;
+    let target=null;
+    bonuses.forEach(b=>{if(Math.abs(b.x-ai.x)<100 && b.y>ai.y-200) target=b;});
+    if(target){ai.x += (target.x>ai.x)?ai.speed:-ai.speed; ai.y += (target.y>ai.y)?ai.speed:-ai.speed;}
+    else {if(Math.random()<0.02) ai.dir=(Math.random()<0.5?-1:1);}
+    ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
+    ai.y=Math.max(0,Math.min(canvas.height-ai.h,ai.y));
+    if(ai.laser && laserCooldown<=0 && Math.random()<0.03) shootLaser(ai);
+  });
+}
+function drawIA(){ iaPlayers.forEach(ai=>{
+  if(!ai.alive) return;
+  drawRocket(ai,ai.color);
+  asteroids.forEach((a,i)=>{if(hit(ai,a)){if(ai.shield){spawnParticles(a.x,a.y,"#00caff",4,15); a.y=9999;} else ai.alive=false;}});
+  bonuses.forEach((b,i)=>{if(hit(ai,b)){useBonus(ai,b.type); bonuses.splice(i,1);}});
+});}
 
 // ===== UPDATE =====
 function update(){
@@ -233,21 +255,19 @@ function update(){
   ctx.fillStyle="white";
   for(let i=0;i<40;i++){let x=(i*137)%600,y=((i*137+score*2)%800); ctx.fillRect(x,y,2,2);}
 
-  movePlayer();
-  if(laserCooldown>0) laserCooldown--;
+  movePlayer(); if(laserCooldown>0) laserCooldown--;
 
   drawParticles();
 
   // lasers
   lasers.forEach((l,i)=>{
-    l.y-=10;
-    ctx.fillStyle="red"; ctx.fillRect(l.x-2,l.y,l.w,l.h);
+    l.y-=10; ctx.fillStyle="red"; ctx.fillRect(l.x-2,l.y,l.w,l.h);
     asteroids.forEach((a,j)=>{
       if(hit(l,a)){
         for(let k=0;k<10;k++) spawnParticles(a.x+a.w/2,a.y+a.h/2,"#ff5500",2+Math.random()*2,2);
         explosionSound.currentTime=0; explosionSound.play();
+        if(l.owner==="player") score+=10;
         asteroids.splice(j,1); lasers.splice(i,1);
-        score+=10; scoreSpan.textContent=score;
       }
     });
     if(l.y<-20) lasers.splice(i,1);
@@ -255,7 +275,7 @@ function update(){
 
   // asteroids
   asteroidSpawnTimer++;
-  if(asteroidSpawnTimer>=asteroidSpawnInterval){spawnAsteroid(); asteroidSpawnTimer=0; if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;}
+  if(asteroidSpawnTimer>=asteroidSpawnInterval){spawnAsteroid(); asteroidSpawnTimer=0;if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;}
   if(score>=nextBonusTrigger){spawnBonus(); nextBonusTrigger+=BONUS_INTERVAL;}
 
   asteroids.forEach((a,i)=>{
@@ -267,7 +287,11 @@ function update(){
   bonuses.forEach((b,i)=>{b.y+=b.speed; ctx.font="28px Arial"; ctx.fillText(b.icon,b.x,b.y+b.h); if(hit(player,b)){useBonus(player,b.type); bonuses.splice(i,1);}});
 
   drawRocket(player);
+
+  if(mode==="multi"){moveIA(); drawIA();}
+
   scoreSpan.textContent=score;
+
   requestAnimationFrame(update);
 }
 
@@ -278,8 +302,7 @@ function endGame(){
     <h1>GAME OVER</h1>
     <p>Score: ${score}</p>
     <button onclick="initGame()">Rejouer</button>
-    <button onclick="menuMain()">Menu</button>
-  `;
+    <button onclick="menuMain()">Menu</button>`;
 }
 
 // ===== PAUSE =====
@@ -290,8 +313,7 @@ function togglePause(){
     screen.innerHTML=`
       <h1>⏸ PAUSE ⏸</h1>
       <button onclick="resumeGame()">Reprendre</button>
-      <button onclick="menuMain()">Menu</button>
-    `;
+      <button onclick="menuMain()">Menu</button>`;
   } else { screen.style.display="none"; requestAnimationFrame(update);}
 }
 function resumeGame(){screen.style.display="none"; gamePaused=false; requestAnimationFrame(update);}

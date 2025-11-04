@@ -25,7 +25,6 @@ input{padding:12px 20px;font-size:18px;border:2px solid #00d4ff;border-radius:25
 </div>
 
 <script>
-// ===== VARIABLES =====
 let screen=document.getElementById("screen");
 let canvas=document.getElementById("game");
 let ctx=canvas.getContext("2d");
@@ -39,7 +38,7 @@ let keys={}, particleList=[], lasers=[], asteroids=[], bonuses=[], iaPlayers=[];
 let asteroidSpawnTimer=0, asteroidSpawnInterval=60;
 let laserCooldown=0, nextBonusTrigger=100, BONUS_INTERVAL=100;
 let player={x:280,y:740,w:40,h:60,shield:false,laser:false};
-let bonusBlink=false, bonusEndTime=0;
+let bonusEndTime=0;
 
 // ===== SOUNDS =====
 const laserSound=new Audio("sounds/laser.mp3");
@@ -73,32 +72,29 @@ function drawParticles(){
 
 // ===== MENUS =====
 function menuPseudo(){
-  screen.innerHTML=`
-    <h1>🚀 Fusée Spatiale 🚀</h1>
-    <p>Entrez votre pseudo:</p>
-    <input id="pseudoInput" maxlength="15"/>
-    <button id="validatePseudo">Valider</button>`;
+  screen.innerHTML=`<h1>🚀 Fusée Spatiale 🚀</h1>
+  <p>Entrez votre pseudo:</p>
+  <input id="pseudoInput" maxlength="15"/>
+  <button id="validatePseudo">Valider</button>`;
   document.getElementById("validatePseudo").onclick=()=>{
     pseudo=document.getElementById("pseudoInput").value||"Joueur";
     menuMain();
   };
 }
 function menuMain(){
-  screen.innerHTML=`
-    <h1>🚀 Fusée Spatiale 🚀</h1>
-    <p>Bonjour ${pseudo}!</p>
-    <button id="soloBtn">Solo</button>
-    <button id="multiBtn">Multijoueur</button>`;
+  screen.innerHTML=`<h1>🚀 Fusée Spatiale 🚀</h1>
+  <p>Bonjour ${pseudo}!</p>
+  <button id="soloBtn">Solo</button>
+  <button id="multiBtn">Multijoueur</button>`;
   document.getElementById("soloBtn").onclick=startSolo;
   document.getElementById("multiBtn").onclick=menuMulti;
 }
 function menuMulti(){
-  screen.innerHTML=`
-    <h1>🚀 Mode Multi</h1>
-    <p>Choisir difficulté IA</p>
-    <button id="easyBtn">Facile</button>
-    <button id="mediumBtn">Moyen</button>
-    <button id="hardBtn">Difficile</button>`;
+  screen.innerHTML=`<h1>🚀 Mode Multi</h1>
+  <p>Choisir difficulté IA</p>
+  <button id="easyBtn">Facile</button>
+  <button id="mediumBtn">Moyen</button>
+  <button id="hardBtn">Difficile</button>`;
   document.getElementById("easyBtn").onclick=()=>startMulti("easy");
   document.getElementById("mediumBtn").onclick=()=>startMulti("medium");
   document.getElementById("hardBtn").onclick=()=>startMulti("hard");
@@ -109,7 +105,7 @@ function startSolo(){mode="solo"; initGame();}
 function startMulti(diff){mode="multi"; difficulty=diff; initGame();}
 function initGame(){
   screen.style.display="none"; score=0; scoreSpan.textContent=score;
-  asteroids=[]; bonuses=[]; particleList=[]; lasers=[];
+  asteroids=[]; bonuses=[]; particleList=[]; lasers=[]; iaPlayers=[];
   player={x:280,y:740,w:40,h:60,shield:false,laser:false};
   gameRunning=true; gamePaused=false;
   asteroidSpawnInterval=(mode==="multi"&&difficulty==="hard"?40:60);
@@ -127,7 +123,7 @@ function initIA(){
   for(let i=0;i<4;i++){
     iaPlayers.push({
       x:100+i*120,y:740,w:40,h:60,color:colors[i],name:names[i],
-      alive:true,dx:0,dy:0,speed:(difficulty==="hard"?5:(difficulty==="medium"?4:3)),shield:false,laser:false,score:0
+      alive:true,dx:0,speed:(difficulty==="hard"?5:(difficulty==="medium"?4:3)),shield:false,laser:false,score:0
     });
   }
 }
@@ -159,10 +155,7 @@ function explodeAsteroid(x,y){
     particleList.push({x,y,dx:(Math.random()*2-1)*3,dy:(Math.random()*2-1)*3,life:30+Math.random()*10,size:2+Math.random()*3,color:["#ff4500","#ff8c00","#ff6347"][Math.floor(Math.random()*3)]});
   }
 }
-function drawLasers(){
-  ctx.fillStyle="#ff0000";
-  lasers.forEach((l,i)=>{ctx.fillRect(l.x-l.w/2,l.y-l.h,l.w,l.h); if(l.y-l.h<0) lasers.splice(i,1);});
-}
+function drawLasers(){ctx.fillStyle="#ff0000"; lasers.forEach((l,i)=>{ctx.fillRect(l.x-l.w/2,l.y-l.h,l.w,l.h); if(l.y-l.h<0) lasers.splice(i,1);});}
 
 // ===== BONUS =====
 function useBonus(p,type){
@@ -175,104 +168,55 @@ function spawnAsteroid(){let s=20+Math.random()*30; asteroids.push({x:Math.rando
 function spawnBonus(){let type=["shield","laser","score"][Math.floor(Math.random()*3)]; let s=30; let icon=type==="shield"?"🛡️":type==="laser"?"🔫":"🏆"; bonuses.push({x:Math.random()*(canvas.width-s),y:-s,w:s,h:s,speed:3,type,icon});}
 
 // ===== DESSIN FUSÉE & BOUCLIER =====
-function drawRocket(p, isPlayer=true){
-  // dégradé
+function drawRocket(p,isPlayer=true){
   let grad=ctx.createLinearGradient(p.x,p.y,p.x,p.y+p.h);
   grad.addColorStop(0,isPlayer?"#00d4ff":p.color);
   grad.addColorStop(1,isPlayer?"#0080ff":p.color);
   ctx.fillStyle=grad;
-  // clignotement si bonus presque fini
   if(isPlayer && bonusEndTime && Date.now() > bonusEndTime-3000 && Math.floor(Date.now()/200)%2===0) ctx.globalAlpha=0.3;
-  // forme emoji 🚀
   ctx.beginPath();
   ctx.moveTo(p.x+p.w/2,p.y);
   ctx.lineTo(p.x+p.w,p.y+p.h*0.6);
   ctx.lineTo(p.x+p.w*0.75,p.y+p.h);
   ctx.lineTo(p.x+p.w*0.25,p.y+p.h);
   ctx.lineTo(p.x,p.y+p.h*0.6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha=1;
-  // cockpit
-  ctx.fillStyle="#87CEEB";
-  ctx.beginPath(); ctx.arc(p.x+p.w/2,p.y+p.h*0.5,p.w*0.12,0,Math.PI*2); ctx.fill();
-  // bouclier
-  if(p.shield){
-    let r=35+Math.sin(Date.now()/120)*3;
-    ctx.strokeStyle="#00caff"; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.arc(p.x+p.w/2,p.y+p.h/2,r,0,Math.PI*2); ctx.stroke();
-  }
+  ctx.closePath(); ctx.fill(); ctx.globalAlpha=1;
+  ctx.fillStyle="#87CEEB"; ctx.beginPath(); ctx.arc(p.x+p.w/2,p.y+p.h*0.5,p.w*0.12,0,Math.PI*2); ctx.fill();
+  if(p.shield){let r=35+Math.sin(Date.now()/120)*3; ctx.strokeStyle="#00caff"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x+p.w/2,p.y+p.h/2,r,0,Math.PI*2); ctx.stroke();}
 }
 
 // ===== COLLISION =====
 function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
 
 // ===== IA =====
-function moveIA(){
-  iaPlayers.forEach(ai=>{
-    if(!ai.alive) return;
-    let target=null;
-    bonuses.forEach(b=>{if(b.y>ai.y-200 && Math.abs(b.x-ai.x)<100) target=b;});
-    if(target){ai.dx=(target.x>ai.x)?1:-1;}
-    else if(Math.random()<0.02) ai.dx=Math.random()<0.5?-1:1;
-    ai.x+=ai.dx*ai.speed;
-    ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
-  });
-}
-function drawIA(){iaPlayers.forEach(ai=>{if(ai.alive){drawRocket(ai,false); spawnParticles(ai.x+ai.w/2,ai.y+ai.h,"#ffaa00",2,1);}});}
+function moveIA(){iaPlayers.forEach(ai=>{if(!ai.alive)return; let target=bonuses.find(b=>Math.abs(b.x-ai.x)<100&&b.y>ai.y-200); if(target){ai.dx=(target.x>ai.x)?1:-1;}else{if(Math.random()<0.02)ai.dx=Math.random()<0.5?-1:1;} ai.x+=ai.dx*ai.speed; ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));});}
 
 // ===== UPDATE =====
 function update(){
-  if(!gameRunning||gamePaused) return;
+  if(!gameRunning||gamePaused)return;
   ctx.clearRect(0,0,600,800);
-
   // étoiles
   ctx.fillStyle="white";
   for(let i=0;i<40;i++){let x=(i*137)%600,y=((i*137+score*2)%800); ctx.fillRect(x,y,2,2);}
-
-  movePlayer(); if(laserCooldown>0) laserCooldown--;
-  spawnParticles(player.x+player.w/2,player.y+player.h,"#ffaa00",2,1);
+  movePlayer();
+  if(laserCooldown>0) laserCooldown--;
+  spawnParticles(player.x+player.w/2,player.y+player.h,"#ffaa00",2,2);
   drawParticles();
-
+  drawLasers();
   asteroidSpawnTimer++;
   if(asteroidSpawnTimer>=asteroidSpawnInterval){spawnAsteroid(); asteroidSpawnTimer=0;if(asteroidSpawnInterval>25) asteroidSpawnInterval-=0.4;}
   if(score>=nextBonusTrigger){spawnBonus(); nextBonusTrigger+=BONUS_INTERVAL;}
-
-  asteroids.forEach((a,i)=>{
-    a.y+=a.speed;
-    ctx.fillStyle="#888"; ctx.beginPath(); ctx.arc(a.x+a.w/2,a.y+a.h/2,a.w/2,0,Math.PI*2); ctx.fill();
-    if(hit(player,a)){if(player.shield){spawnParticles(a.x,a.y,"#00caff",4,15); asteroids.splice(i,1);} else endGame();}
-  });
+  asteroids.forEach((a,i)=>{a.y+=a.speed; if(a.y>800){asteroids.splice(i,1); if(player){score+=10; scoreSpan.textContent=score;}} ctx.fillStyle="#888"; ctx.beginPath(); ctx.arc(a.x+a.w/2,a.y+a.h/2,a.w/2,0,Math.PI*2); ctx.fill(); if(hit(player,a)){if(player.shield){spawnParticles(a.x,a.y,"#00caff",4,15); asteroids.splice(i,1);}else endGame();}});
 
   bonuses.forEach((b,i)=>{b.y+=b.speed; ctx.font="28px Arial"; ctx.fillText(b.icon,b.x,b.y+b.h); if(hit(player,b)){useBonus(player,b.type); bonuses.splice(i,1);}});
-
-  drawLasers(); drawRocket(player); if(mode==="multi"){moveIA(); drawIA();}
-
+  drawRocket(player,true);
+  moveIA(); iaPlayers.forEach(ai=>{if(!ai.alive)return; drawRocket(ai,false); asteroids.forEach(a=>{if(hit(ai,a)){if(ai.shield){spawnParticles(a.x,a.y,"#00caff",4,15); a.y=9999;}else ai.alive=false;}});});
   scoreSpan.textContent=score;
   requestAnimationFrame(update);
 }
 
-// ===== END GAME =====
-function endGame(){
-  gameRunning=false; pauseBtn.style.display="none"; scoreDisplay.style.display="none"; screen.style.display="flex";
-  if(mode==="solo"){
-    let newRecord=false;
-    if(score>bestSolo){bestSolo=score; newRecord=true;}
-    screen.innerHTML=`<h1>GAME OVER</h1>
-      <p>Score: ${score}</p>
-      <p>Best: ${bestSolo} ${newRecord?"🏆 NEW RECORD! 🎉":""}</p>
-      <button onclick="initGame()">Rejouer</button>
-      <button onclick="menuMain()">Menu</button>`;
-  } else {
-    screen.innerHTML=`<h1>GAME OVER</h1>
-      <p>Classement?</p>
-      <button onclick="initGame()">Rejouer</button>
-      <button onclick="menuMain()">Menu</button>`;
-  }
-}
-
 // ===== PAUSE =====
-function togglePause(){gamePaused=!gamePaused;if(!gamePaused) requestAnimationFrame(update);}
+function togglePause(){gamePaused=!gamePaused; if(!gamePaused) requestAnimationFrame(update);}
 </script>
 </body>
 </html>

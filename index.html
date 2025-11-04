@@ -54,9 +54,7 @@ document.addEventListener("keydown", e => {
     if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
     keys[e.code] = true;
 });
-document.addEventListener("keyup", e => {
-    keys[e.code] = false;
-});
+document.addEventListener("keyup", e => { keys[e.code] = false; });
 
 // ===== EVENTS =====
 document.getElementById("startBtn").onclick = menuPseudo;
@@ -221,7 +219,9 @@ function moveIA(){
     let target = null;
     bonuses.forEach(b=>{ if(b.y>ai.y-200 && Math.abs(b.x-ai.x)<100) target=b; });
     if(target){ ai.dx=(target.x>ai.x)?1:-1; ai.dy=(target.y>ai.y)?1:-1; }
-    else { if(Math.random()<0.02){ ai.dx=Math.random()<0.5?-1:1; ai.dy=Math.random()<0.5?-1:1; } }
+    else { if(difficulty==="easy"){if(Math.random()<0.02){ai.dx=Math.random()<0.5?-1:1; ai.dy=Math.random()<0.5?-1:1;}}
+           else if(difficulty==="medium"){if(Math.random()<0.01){ai.dx=Math.random()<0.5?-1:1; ai.dy=Math.random()<0.5?-1:1;}}
+           else{if(Math.random()<0.01){ai.dx=Math.random()<0.5?-1:1; ai.dy=Math.random()<0.5?-1:1;}}}
     ai.x+=ai.dx*ai.speed; ai.y+=ai.dy*ai.speed;
     ai.x=Math.max(0,Math.min(canvas.width-ai.w,ai.x));
     ai.y=Math.max(0,Math.min(canvas.height-ai.h,ai.y));

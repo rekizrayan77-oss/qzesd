@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fusée Spatiale Deluxe — Final</title>
+<style>
+  /* --- layout & theme kept exactly like your provided file --- */
+  body {
+    margin:0; padding:0; height:100vh; overflow:hidden;
+    font-family:Arial, sans-serif;
+    background:linear-gradient(180deg,#000428,#004e92);
+    color:white;
+  }
+  #gameContainer {position:relative; width:100%; height:100%; display:flex; justify-content:center; align-items:center;}
+  canvas {
+    background:radial-gradient(circle,#001a33,#000);
+    border:3px solid #00d4ff;
+    box-shadow:0 0 30px #00d4ff80;
+  }
+  #screen {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    justify-content:center; align-items:center; background:#000000dd; z-index:10;
+  }
+  button {padding:12px 35px; margin:8px; font-size:20px; border:none; border-radius:50px; cursor:pointer;
+          background:linear-gradient(135deg,#667eea,#764ba2); color:white; font-weight:bold;}
+  input {padding:12px 20px; font-size:18px; border:2px solid #00d4ff; border-radius:25px; background:#ffffff22; color:white; text-align:center;}
+  #scoreDisplay {position:absolute; top:20px; left:20px; font-size:24px;}
+  #pauseBtn {position:absolute; top:20px; right:20px; display:none;}
+  .podium {padding:15px;margin-top:15px; background:#ffffff22;border-radius:15px;}
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <div id="scoreDisplay" style="display:none;">Score: <span id="score">0</span></div>
+  <button id="pauseBtn" style="display:none;">⏸ Pause</button>
+  <div id="screen"><h1>🚀 Fusée Spatiale 🚀</h1><button id="startBtn">Démarrer</button></div>
+  <canvas id="game" width="600" height="800"></canvas>
+</div>
+
+<script>
+/* ============================
+   Fusée Spatiale — Version finale
+   - Gardé ton décor et menus
+   - Remis la fusée & astéroides à l'aspect détaillé d'origine
+   - Ajouté toutes les options demandées, corrigé bugs
+   - Bonus = emoji (🛡️ 🔫 🏆), durée 30s, spawn 100 then +110
+   - IA capable de ramasser bonus & tirer
+   - Tir = projectile avec traînée + flash à l'impact
+   - Pas de sons ni images externes (compatible GitHub)
+   ============================ */
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const screen = document.getElementById('screen');
+const startBtn = document.getElementById('startBtn');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const scoreSpan = document.getElementById('score');
+const pauseBtn = document.getElementById('pauseBtn');
+
+let pseudo = '';
+let mode = 'solo'; // 'solo' or 'multi'
+let difficulty = 'easy'; // 'easy','medium','hard'
+let score = 0;
+let bestSolo = 0;
+
+let gameRunning = false;
+let gamePaused = false;
+let gameOver = false;
+let keys = {};
+
+// Player, IA, entities
+let player = { x:280, y:740, w:40, h:60, shield:false, laser:false, laserExpires:0 };
+let iaPlayers = [];
+let asteroids = [];
+let bonuses = []; // {x,y,w,h,type,icon,expires}
+let bullets = []; // {x,y,dx,dy,w,h,owner,flash,trail}
+let particles = [];
+
+// spawn control
+let asteroidTimer = 0;
+let asteroidInterval = 60;
+let nextBonusTrigger = 100; // first at 100
+const BONUS_INCREMENT = 110; // +110 after first
+const BONUS_DURATION_MS = 30000; // 30s
+
+// keep original visuals: particle helper
+function spawnParticles(x,y,color,size,count){
+  for(let i=0;i<count;i++){
+    particles.push({
+      x,y,
+      dx:(Math.random()*2-1)*2,
+      dy:(Math.random()*2-1)*2,
+      life:20+Math.random()*20,
+      size: size*(0.6+Math.random()*0.8),
+      color
+    });
+  }
+}
+function drawParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.dx; p.y += p.dy; p.life -= 1;
+    ctx.globalAlpha = Math.max(0, p.life / 40);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if(p.life <= 0) particles.splice(i,1);
+  }
+}
+
+/* ----------------------------
+   Input / Menu
+   ---------------------------- */
+startBtn.addEventListener('click', showPseudo);
+pauseBtn.addEventListener('click', togglePause);
+
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName === 'INPUT') return;
+  keys[e.key] = true;
+  // prevent arrow default while playing
+  if(gameRunning && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e=>{
+  if(e.target.tagName === 'INPUT') return;
+  keys[e.key] = false;
+});
+
+function showPseudo(){
+  screen.innerHTML = `
+    <h1>🚀 Fusée Spatiale 🚀</h1>
+    <p>Entrez ton pseudo :</p>
+    <input id="pseudoInput" placeholder="Votre pseudo" maxlength="15" />
+    <div style="margin-top:8px;"><button id="validatePseudo">Valider</button></div>
+  `;
+  document.getElementById('validatePseudo').onclick = () => {
+    pseudo = document.getElementById('pseudoInput').value.trim() || 'Joueur';
+    showMainMenu();
+  };
+  document.getElementById('pseudoInput').addEventListener('keypress', e => { if(e.key === 'Enter') document.getElementById('validatePseudo').click(); });
+  document.getElementById('pseudoInput').focus();
+}
+
+function showMainMenu(){
+  screen.innerHTML = `
+    <h1>🚀 Fusée Spatiale 🚀</h1>
+    <p>Bonjour ${pseudo} !</p>
+    <div><button id="soloBtn">Solo</button><button id="multiBtn">Multijoueur</button></div>
+  `;
+  document.getElementById('soloBtn').onclick = () => startSolo();
+  document.getElementById('multiBtn').onclick = () => showMultiMenu();
+}
+
+function showMultiMenu(){
+  screen.innerHTML = `
+    <h1>🚀 Mode Multijoueur</h1>
+    <p>Choisir difficulté IA</p>
+    <div>
+      <button id="easyBtn">Facile</button>
+      <button id="mediumBtn">Moyen</button>
+      <button id="hardBtn">Difficile</button>
+    </div>
+  `;
+  document.getElementById('easyBtn').onclick = () => startMulti('easy');
+  document.getElementById('mediumBtn').onclick = () => startMulti('medium');
+  document.getElementById('hardBtn').onclick = () => startMulti('hard');
+}
+
+/* ----------------------------
+   Init / Reset
+   ---------------------------- */
+function startSolo(){
+  mode = 'solo';
+  initGame();
+}
+function startMulti(diff){
+  mode = 'multi';
+  difficulty = diff;
+  initGame();
+}
+
+function initGame(){
+  // show/hide
+  screen.style.display = 'none';
+  scoreDisplay.style.display = 'block';
+  pauseBtn.style.display = 'block';
+
+  // reset
+  score = 0; scoreSpan.textContent = score;
+  player = { x:280, y:740, w:40, h:60, shield:false, laser:false, laserExpires:0 };
+  iaPlayers = [];
+  asteroids = [];
+  bonuses = [];
+  bullets = [];
+  particles = [];
+  asteroidTimer = 0;
+  asteroidInterval = (mode==='multi' && difficulty==='hard') ? 40 : 60;
+  nextBonusTrigger = 100;
+  gameRunning = true;
+  gamePaused = false;
+  gameOver = false;
+
+  if(mode === 'multi') initIA();
+
+  requestAnimationFrame(loop);
+}
+
+function initIA(){
+  const colors = ['#ff6b6b','#ffd93d','#6bcf7f','#a29bfe'];
+  const names = ['Astro','Nova','Cosmos','Stellar'];
+  iaPlayers = [];
+  for(let i=0;i<4;i++){
+    iaPlayers.push({
+      x: 80 + i*120, y: 740, w:40, h:60,
+      color: colors[i], name: names[i],
+      alive: true, dirX:0, dirY:0, speed: (difficulty==='hard'?4: difficulty==='medium'?3:2),
+      shield:false, laser:false, laserExpires:0,
+      shootCooldown: Math.floor(Math.random()*80)
+    });
+  }
+}
+
+/* ----------------------------
+   Drawing: restore original rocket + detailed asteroids
+   (we use the detailed drawRocket from your original code)
+   ---------------------------- */
+function drawRocketDetailed(x, y, w, h, color, glowColor){
+  // body
+  ctx.fillStyle = color;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = glowColor;
+  ctx.fillRect(x + w * 0.3, y + h * 0.3, w * 0.4, h * 0.6);
+
+  // nose
+  ctx.beginPath();
+  ctx.moveTo(x + w/2, y);
+  ctx.lineTo(x + w*0.3, y + h*0.3);
+  ctx.lineTo(x + w*0.7, y + h*0.3);
+  ctx.closePath();
+  ctx.fill();
+
+  // fins left
+  ctx.beginPath();
+  ctx.moveTo(x + w*0.3, y + h*0.8);
+  ctx.lineTo(x + w*0.1, y + h);
+  ctx.lineTo(x + w*0.3, y + h);
+  ctx.closePath();
+  ctx.fill();
+
+  // fins right
+  ctx.beginPath();
+  ctx.moveTo(x + w*0.7, y + h*0.8);
+  ctx.lineTo(x + w*0.9, y + h);
+  ctx.lineTo(x + w*0.7, y + h);
+  ctx.closePath();
+  ctx.fill();
+
+  // window
+  ctx.fillStyle = '#87CEEB';
+  ctx.beginPath();
+  ctx.arc(x + w/2, y + h*0.5, w*0.1, 0, Math.PI*2);
+  ctx.fill();
+
+  // flame (small)
+  ctx.fillStyle = '#FF4500';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#FF4500';
+  ctx.beginPath();
+  ctx.moveTo(x + w*0.35, y + h);
+  ctx.lineTo(x + w*0.45, y + h*1.2);
+  ctx.lineTo(x + w*0.5, y + h*1.1);
+  ctx.lineTo(x + w*0.55, y + h*1.2);
+  ctx.lineTo(x + w*0.65, y + h);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.moveTo(x + w*0.4, y + h);
+  ctx.lineTo(x + w*0.47, y + h*1.15);
+  ctx.lineTo(x + w*0.5, y + h*1.05);
+  ctx.lineTo(x + w*0.53, y + h*1.15);
+  ctx.lineTo(x + w*0.6, y + h);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+}
+
+function drawAsteroidDetailed(a){
+  ctx.fillStyle = '#8b8b8b';
+  ctx.strokeStyle = '#5a5a5a';
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(a.x + a.w/2, a.y + a.h/2, a.w/2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+/* ----------------------------
+   Helper collision
+   ---------------------------- */
+function collides(a, b){
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+/* ----------------------------
+   Bullets (projectiles) with trail + flash
+   bullets: {x,y,dx,dy,w,h,owner,flash,trailParts}
+   owner: 'player' or index-of-IA
+   ---------------------------- */
+function spawnBullet(x,y,dx,dy,owner){
+  bullets.push({ x, y, dx, dy, w:6, h:12, owner, flash:0, trail:[] });
+}
+function updateBullets(){
+  for(let i=bullets.length-1;i>=0;i--){
+    const b = bullets[i];
+    // move
+    b.x += b.dx;
+    b.y += b.dy;
+
+    // leave small trail particles (visual)
+    b.trail.push({ x:b.x + (Math.random()-0.5)*4, y:b.y + (Math.random()-0.5)*4, life:8 + Math.random()*6 });
+    if(b.trail.length > 6) b.trail.shift();
+
+    // draw trail
+    for(let t=0;t<b.trail.length;t++){
+      const tp = b.trail[t];
+      ctx.globalAlpha = tp.life / 16;
+      ctx.fillStyle = 'rgba(0,255,255,0.8)';
+      ctx.fillRect(tp.x, tp.y, 2, 2);
+      tp.life -= 1;
+    }
+    ctx.globalAlpha = 1;
+
+    // check collisions with asteroids
+    let hitAst = -1;
+    for(let j=0;j<asteroids.length;j++){
+      if(collides(b, asteroids[j])){
+        hitAst = j; break;
+      }
+    }
+    if(hitAst !== -1){
+      // explode asteroid
+      const a = asteroids[hitAst];
+      spawnParticles(a.x + a.w/2, a.y + a.h/2, '#ff8800', 3, 16);
+      // award points
+      score += 10;
+      scoreSpan.textContent = score;
+      // mark flash on bullet for short animation
+      b.flash = 6;
+      // remove asteroid
+      asteroids.splice(hitAst, 1);
+    }
+
+    // flash animation handling
+    if(b.flash > 0){
+      ctx.fillStyle = `rgba(255,235,110,${b.flash/8})`;
+      ctx.fillRect(b.x-4, b.y-4, b.w+8, b.h+8);
+      b.flash--;
+      if(b.flash <= 0) bullets.splice(i,1);
+      continue; // skip normal drawing for this step
+    }
+
+    // draw bullet (small rounded)
+    ctx.fillStyle = 'cyan';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+
+    // out of bounds
+    if(b.y < -20 || b.y > canvas.height + 20 || b.x < -20 || b.x > canvas.width + 20){
+      bullets.splice(i,1);
+    }
+  }
+}
+
+/* ----------------------------
+   Spawn asteroids & bonuses
+   ---------------------------- */
+function spawnAsteroid(){
+  const size = 20 + Math.random()*30;
+  const speed = 2 + Math.random()*2 + (score/500);
+  asteroids.push({ x: Math.random()*(canvas.width-size), y: -size, w: size, h: size, speed });
+}
+
+function spawnBonus(){
+  // types: 0=shield,1=laser,2=score
+  const t = Math.floor(Math.random()*3);
+  const icon = t === 0 ? '🛡️' : t === 1 ? '🔫' : '🏆';
+  const s = 34;
+  bonuses.push({ x: Math.random()*(canvas.width - s), y: -s, w: s, h: s, type: t, icon, expires: 0 });
+}
+
+/* ----------------------------
+   Activate bonus: applies to a target (player or ai)
+   duration 30s for shield & laser; score is instant +100
+   ---------------------------- */
+function applyBonusTo(target, type){
+  if(type === 0){ // shield
+    target.shield = true;
+    // 30s
+    setTimeout(()=> { target.shield = false; }, BONUS_DURATION_MS);
+  } else if(type === 1){ // laser
+    target.laser = true;
+    target.laserExpires = Date.now() + BONUS_DURATION_MS;
+    // deactivate after 30s
+    setTimeout(()=> { target.laser = false; target.laserExpires = 0; }, BONUS_DURATION_MS);
+  } else if(type === 2){
+    score += 100;
+    scoreSpan.textContent = score;
+  }
+}
+
+/* ----------------------------
+   Player movement & actions
+   ---------------------------- */
+function handlePlayerInput(){
+  if(keys.ArrowLeft && player.x > 0) player.x -= 6;
+  if(keys.ArrowRight && player.x + player.w < canvas.width) player.x += 6;
+  if(keys.ArrowUp && player.y > 0) player.y -= 4;
+  if(keys.ArrowDown && player.y + player.h < canvas.height) player.y += 4;
+  if(keys[' '] && player.laser){
+    // spawn projectile upward with small cooldown approach
+    // to avoid too many bullets, we add small per-frame gating
+    if(!player._shootCooldown || player._shootCooldown <= 0){
+      player._shootCooldown = 10; // frames
+      spawnBullet(player.x + player.w/2 - 3, player.y - 12, 0, -10, 'player');
+    }
+  }
+  if(player._shootCooldown > 0) player._shootCooldown--;
+}
+
+/* ----------------------------
+   IA behavior: move towards bonuses, avoid or random walk
+   If IA has laser, it can shoot at intervals
+   ---------------------------- */
+function updateIA(){
+  iaPlayers.forEach((ai, idx) => {
+    if(!ai.alive) return;
+    // find nearest bonus (prioritize)
+    let targetBonus = null;
+    let bestDist = 1e9;
+    for(const b of bonuses){
+      const dx = (b.x + b.w/2) - (ai.x + ai.w/2);
+      const dy = (b.y + b.h/2) - (ai.y + ai.h/2);
+      const d = Math.hypot(dx, dy);
+      if(d < bestDist){
+        bestDist = d; targetBonus = b;
+      }
+    }
+    if(targetBonus && bestDist < 300){
+      // move toward bonus (both axes)
+      if(targetBonus.x + targetBonus.w/2 > ai.x + ai.w/2) ai.x += ai.speed;
+      else ai.x -= ai.speed;
+      if(targetBonus.y + targetBonus.h/2 > ai.y + ai.h/2) ai.y += ai.speed;
+      else ai.y -= ai.speed;
+    } else {
+      // wandering / dodge behavior
+      if(Math.random() < 0.02) ai.dirX = (Math.random() < 0.5) ? -1 : 1;
+      if(Math.random() < 0.005) ai.dirY = (Math.random() < 0.5) ? -1 : 1;
+      ai.x += ai.dirX * ai.speed;
+      ai.y += ai.dirY * (ai.speed / 2);
+    }
+    // clamp
+    ai.x = Math.max(0, Math.min(canvas.width - ai.w, ai.x));
+    ai.y = Math.max(0, Math.min(canvas.height - ai.h, ai.y));
+
+    // shooting if has laser and cooldown expired
+    if(ai.laser){
+      if(!ai.shootCooldown) ai.shootCooldown = 60 + Math.floor(Math.random()*40);
+      ai.shootCooldown--;
+      if(ai.shootCooldown <= 0){
+        // shot upward (AI at bottom shoots up? for fairness, AI shoots upward)
+        spawnBullet(ai.x + ai.w/2 - 3, ai.y - 12, 0, -9, idx); // owner idx
+        ai.shootCooldown = 60 + Math.floor(Math.random()*60);
+      }
+    }
+  });
+}
+
+/* ----------------------------
+   Main loop
+   ---------------------------- */
+function loop(){
+  if(!gameRunning || gamePaused) return;
+  // clear
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // background stars (parallax effect)
+  ctx.fillStyle = 'white';
+  for(let i=0;i<50;i++){
+    let x = (i * 137.5) % canvas.width;
+    let y = ((i * 137.5 + score * 2) % canvas.height);
+    ctx.fillRect(x, y, 2, 2);
+  }
+
+  // player actions
+  handlePlayerInput();
+
+  // asteroid spawn rhythm
+  asteroidTimer++;
+  if(asteroidTimer >= asteroidInterval){
+    spawnAsteroid();
+    asteroidTimer = 0;
+    if(asteroidInterval > 25) asteroidInterval -= 0.4; // ramp difficulty
+  }
+
+  // spawn bonus according to score threshold
+  if(score >= nextBonusTrigger){
+    spawnBonus();
+    // after first at 100, add 110 each time
+    nextBonusTrigger += BONUS_INCREMENT;
+  }
+
+  // update asteroids
+  for(let i=asteroids.length-1;i>=0;i--){
+    const a = asteroids[i];
+    a.y += a.speed;
+    // draw detailed asteroid
+    drawAsteroidDetailed(a);
+
+    // off-screen -> award player +10 and remove
+    if(a.y > canvas.height + 40){
+      asteroids.splice(i,1);
+      score += 10;
+      scoreSpan.textContent = score;
+      continue;
+    }
+
+    // collision with player
+    if(collides(a, player)){
+      if(player.shield){
+        spawnParticles(a.x + a.w/2, a.y + a.h/2, '#00caff', 3, 14);
+        asteroids.splice(i,1);
+      } else {
+        return endGame();
+      }
+    }
+
+    // collision with IA players
+    if(mode === 'multi'){
+      for(const ai of iaPlayers){
+        if(!ai.alive) continue;
+        if(collides(a, ai)){
+          if(ai.shield){
+            spawnParticles(a.x + a.w/2, a.y + a.h/2, '#00caff', 3, 12);
+            // remove asteroid
+            a.y = canvas.height + 999; // mark to be removed next loop iteration
+          } else {
+            ai.alive = false;
+          }
+        }
+      }
+    }
+  }
+
+  // update bonuses (falling emojis)
+  for(let i=bonuses.length-1;i>=0;i--){
+    const b = bonuses[i];
+    b.y += b.speed;
+    // draw emoji
+    ctx.font = `${Math.floor(b.w * 0.9)}px serif`;
+    ctx.fillText(b.icon, b.x, b.y + b.h*0.8);
+
+    if(b.y > canvas.height + 30){
+      bonuses.splice(i,1);
+      continue;
+    }
+
+    // check collision with player
+    if(collides(b, player)){
+      applyBonusTo(player, b.type);
+      bonuses.splice(i,1);
+      continue;
+    }
+
+    // check collision with IA (they can grab)
+    if(mode === 'multi'){
+      for(const ai of iaPlayers){
+        if(!ai.alive) continue;
+        if(collides(b, ai)){
+          applyBonusTo(ai, b.type);
+          bonuses.splice(i,1);
+          break;
+        }
+      }
+    }
+  }
+
+  // update bullets
+  updateBullets();
+
+  // draw player
+  drawRocketDetailed(player.x, player.y, player.w, player.h, '#00d4ff', '#00d4ff');
+  // draw player pseudo
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 12px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(pseudo, player.x + player.w/2, player.y - 6);
+
+  // draw shield if active (animated)
+  if(player.shield){
+    const r = player.w + 8 + Math.sin(Date.now()/120) * 3;
+    ctx.strokeStyle = '#00caff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(player.x + player.w/2, player.y + player.h/2, r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+
+  // draw and update IA
+  if(mode === 'multi'){
+    updateIA();
+    for(const ai of iaPlayers){
+      if(!ai.alive) continue;
+      drawRocketDetailed(ai.x, ai.y, ai.w, ai.h, ai.color, ai.color);
+      ctx.fillStyle = 'white';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(ai.name, ai.x + ai.w/2, ai.y - 6);
+      if(ai.shield){
+        const r = ai.w + 8 + Math.sin(Date.now()/100) * 3;
+        ctx.strokeStyle = '#00caff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ai.x + ai.w/2, ai.y + ai.h/2, r, 0, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // particles
+  drawParticles();
+
+  // update score display
+  scoreSpan.textContent = score;
+
+  // win condition
+  if(score >= 5000){
+    // multiplayer: if any AI reached it? we check player only for solo
+    if(mode === 'solo'){
+      bestSolo = Math.max(bestSolo, score);
+      return winScreen();
+    } else {
+      // if in multi and any entity reaches 5000 (including ai?), we'll show galaxy message
+      return winScreen();
+    }
+  }
+
+  // continue loop
+  requestAnimationFrame(loop);
+}
+
+/* ----------------------------
+   End / Win screens
+   ---------------------------- */
+function endGame(){
+  gameRunning = false;
+  gameOver = true;
+  scoreDisplay.style.display = 'none';
+  pauseBtn.style.display = 'none';
+  screen.style.display = 'flex';
+
+  if(mode === 'solo'){
+    bestSolo = Math.max(bestSolo, score);
+    screen.innerHTML = `
+      <h1>GAME OVER</h1>
+      <p>Score: ${score}</p>
+      <p>Best: ${bestSolo}</p>
+      <div><button id="retry">Rejouer</button><button id="menu">Menu</button></div>
+    `;
+    document.getElementById('retry').onclick = () => startSolo();
+    document.getElementById('menu').onclick = () => { screen.style.display = 'flex'; showMainMenu(); };
+  } else {
+    screen.innerHTML = `
+      <h1>GAME OVER</h1>
+      <p>Fin de la partie</p>
+      <div><button id="menuBtn">Menu</button></div>
+    `;
+    document.getElementById('menuBtn').onclick = () => { showMainMenu(); };
+  }
+}
+
+function winScreen(){
+  gameRunning = false;
+  gameOver = true;
+  scoreDisplay.style.display = 'none';
+  pauseBtn.style.display = 'none';
+  screen.style.display = 'flex';
+
+  if(mode === 'solo'){
+    bestSolo = Math.max(bestSolo, score);
+    screen.innerHTML = `
+      <h1>🏆 WIN 🏆</h1>
+      <p>Score: ${score}</p>
+      <div><button id="retry">Rejouer</button><button id="menu">Menu</button></div>
+    `;
+    document.getElementById('retry').onclick = () => startSolo();
+    document.getElementById('menu').onclick = () => { showMainMenu(); };
+  } else {
+    screen.innerHTML = `
+      <h1>🌌 THE BEST PLAYER OF THE GALAXY 🌌</h1>
+      <div><button id="menuBtn">Menu</button></div>
+    `;
+    document.getElementById('menuBtn').onclick = () => showMainMenu();
+  }
+}
+
+/* ----------------------------
+   Pause
+   ---------------------------- */
+function togglePause(){
+  gamePaused = !gamePaused;
+  if(!gamePaused && gameRunning){
+    requestAnimationFrame(loop);
+  } else {
+    // show pause menu overlay
+    screen.style.display = 'flex';
+    screen.innerHTML = `<h1>⏸ Pause</h1><p style="font-size:24px;color:#00d4ff">Score: ${score}</p><div><button id="resume">Reprendre</button><button id="menu">Menu</button></div>`;
+    document.getElementById('resume').onclick = () => { screen.style.display='none'; gamePaused=false; requestAnimationFrame(loop); };
+    document.getElementById('menu').onclick = () => { gamePaused=false; gameRunning=false; screen.style.display='flex'; showMainMenu(); };
+  }
+}
+
+/* ----------------------------
+   Utility: spawn bullet wrapper for players/IA
+   ---------------------------- */
+function spawnBullet(x,y,dx,dy,owner){
+  // owner: 'player' or integer index of IA
+  bullets.push({ x, y, dx, dy, w:6, h:12, owner, flash:0, trail:[] });
+}
+
+/* ----------------------------
+   small wrappers for in-loop calls that needed to be accessible
+   - shoot by player or AI uses spawnBullet
+   ---------------------------- */
+function playerShoot(){
+  // create forward projectile with slight upward offset
+  spawnBullet(player.x + player.w/2 - 3, player.y - 14, 0, -12, 'player');
+  spawnParticles(player.x + player.w/2, player.y, '#00ffff', 2, 6);
+}
+function aiShoot(aiIndex){
+  const ai = iaPlayers[aiIndex];
+  if(!ai || !ai.alive) return;
+  spawnBullet(ai.x + ai.w/2 - 3, ai.y - 14, 0, -10, aiIndex);
+  spawnParticles(ai.x + ai.w/2, ai.y, '#ff77ff', 2, 5);
+}
+
+/* For fairness, hook keyboard space to spawn bullet if laser active */
+document.addEventListener('keydown', e=>{
+  if(e.key === ' ' && gameRunning && player.laser && !gamePaused){
+    // small cooldown per-frame handled by player._shootCooldown in handlePlayerInput
+    // allow immediate spawn if laser active and cooldown cleared
+    if(!player._shootCooldown || player._shootCooldown <= 0){
+      player._shootCooldown = 10;
+      playerShoot();
+    }
+    e.preventDefault();
+  }
+});
+
+/* ----------------------------
+   Final touch: expose spawnBullet to AI code path earlier used
+   (ai shooting handled in updateIA)
+   ---------------------------- */
+
+/* ----------------------------
+   Start the initial menu
+   ---------------------------- */
+showMainMenu();
+
+</script>
+</body>
+</html>
